@@ -28,13 +28,19 @@ BOT_API_SECRET = os.environ.get("BOT_API_SECRET")
 
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN environment variable is missing")
+    raise RuntimeError(
+        "BOT_TOKEN environment variable is missing"
+    )
 
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is missing")
+    raise RuntimeError(
+        "DATABASE_URL environment variable is missing"
+    )
 
 if not BOT_API_SECRET:
-    raise RuntimeError("BOT_API_SECRET environment variable is missing")
+    raise RuntimeError(
+        "BOT_API_SECRET environment variable is missing"
+    )
 
 
 # =========================================================
@@ -58,9 +64,9 @@ def init_db():
 
         with conn.cursor() as cur:
 
-            # -------------------------------------------------
+            # =================================================
             # USERS
-            # -------------------------------------------------
+            # =================================================
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -90,9 +96,9 @@ def init_db():
             """)
 
 
-            # -------------------------------------------------
+            # =================================================
             # REFERRALS
-            # -------------------------------------------------
+            # =================================================
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS referrals (
@@ -116,9 +122,9 @@ def init_db():
             """)
 
 
-            # -------------------------------------------------
+            # =================================================
             # TRANSACTIONS
-            # -------------------------------------------------
+            # =================================================
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS transactions (
@@ -139,12 +145,11 @@ def init_db():
                 )
             """)
 
-
         conn.commit()
 
 
 # =========================================================
-# TELEGRAM MINI APP INIT DATA VALIDATION
+# TELEGRAM MINI APP INIT DATA
 # =========================================================
 
 def validate_init_data(init_data):
@@ -161,91 +166,65 @@ def validate_init_data(init_data):
             )
         )
 
-
         received_hash = parsed.pop(
             "hash",
             None
         )
 
-
         if not received_hash:
             return None
-
 
         auth_date = parsed.get(
             "auth_date"
         )
 
-
         if not auth_date:
             return None
 
-
-        # InitData valid for 24 hours
+        # 24 hour expiration
         if int(time.time()) - int(auth_date) > 86400:
             return None
 
-
         data_check_string = "\n".join(
-
             f"{key}={parsed[key]}"
-
             for key in sorted(parsed.keys())
-
         )
 
-
         secret_key = hmac.new(
-
             b"WebAppData",
-
             BOT_TOKEN.encode(),
-
             hashlib.sha256
-
         ).digest()
 
-
         calculated_hash = hmac.new(
-
             secret_key,
-
             data_check_string.encode(),
-
             hashlib.sha256
-
         ).hexdigest()
 
-
         if not hmac.compare_digest(
-
             calculated_hash,
-
             received_hash
-
         ):
             return None
-
 
         user_data = parsed.get(
             "user"
         )
 
-
         if not user_data:
             return None
 
-
-        return json.loads(user_data)
-
+        return json.loads(
+            user_data
+        )
 
     except Exception:
-
         return None
 
 
 # =========================================================
-# GET TELEGRAM USER FROM REQUEST
+# AUTHENTICATED MINI APP USER
 # =========================================================
 
 def get_authenticated_user():
@@ -258,33 +237,32 @@ def get_authenticated_user():
         "initData"
     )
 
-
     if not init_data:
 
-        return None, jsonify({
-
-            "success": False,
-
-            "error": "initData is required"
-
-        }), 400
-
+        return (
+            None,
+            jsonify({
+                "success": False,
+                "error": "initData is required"
+            }),
+            400
+        )
 
     telegram_user = validate_init_data(
         init_data
     )
 
-
     if not telegram_user:
 
-        return None, jsonify({
-
-            "success": False,
-
-            "error": "Invalid or expired Telegram initData"
-
-        }), 401
-
+        return (
+            None,
+            jsonify({
+                "success": False,
+                "error":
+                    "Invalid or expired Telegram initData"
+            }),
+            401
+        )
 
     return telegram_user, None, None
 
@@ -300,15 +278,17 @@ def home():
 
         "success": True,
 
-        "service": "ADEWA Mini Bot API",
+        "service":
+            "ADEWA Mini Bot API",
 
-        "status": "running"
+        "status":
+            "running"
 
     })
 
 
 # =========================================================
-# HEALTH CHECK
+# HEALTH
 # =========================================================
 
 @app.route("/api/health")
@@ -322,12 +302,13 @@ def health():
 
             "success": True,
 
-            "status": "online",
+            "status":
+                "online",
 
-            "database": "connected"
+            "database":
+                "connected"
 
         })
-
 
     except Exception as e:
 
@@ -335,9 +316,11 @@ def health():
 
             "success": False,
 
-            "status": "offline",
+            "status":
+                "offline",
 
-            "error": str(e)
+            "error":
+                str(e)
 
         }), 500
 
@@ -358,50 +341,37 @@ def get_me():
         telegram_user, error_response, error_code = \
             get_authenticated_user()
 
-
         if error_response:
-
             return error_response, error_code
-
 
         telegram_id = int(
             telegram_user["id"]
         )
-
 
         first_name = telegram_user.get(
             "first_name",
             ""
         )
 
-
         last_name = telegram_user.get(
             "last_name",
             ""
         )
-
 
         username = telegram_user.get(
             "username",
             ""
         )
 
-
         now = int(
             time.time()
         )
 
-
         init_db()
-
 
         with get_db() as conn:
 
             with conn.cursor() as cur:
-
-                # -------------------------------------------------
-                # CHECK USER
-                # -------------------------------------------------
 
                 cur.execute("""
                     SELECT
@@ -419,15 +389,11 @@ def get_me():
                     FROM users
 
                     WHERE telegram_id = %s
+
+                    FOR UPDATE
                 """, (telegram_id,))
 
-
                 user = cur.fetchone()
-
-
-                # -------------------------------------------------
-                # CREATE USER
-                # -------------------------------------------------
 
                 if not user:
 
@@ -487,13 +453,7 @@ def get_me():
 
                     ))
 
-
                     user = cur.fetchone()
-
-
-                # -------------------------------------------------
-                # UPDATE USER
-                # -------------------------------------------------
 
                 else:
 
@@ -534,12 +494,9 @@ def get_me():
 
                     ))
 
-
                     user = cur.fetchone()
 
-
             conn.commit()
-
 
         return jsonify({
 
@@ -547,28 +504,36 @@ def get_me():
 
             "user": {
 
-                "telegram_id": user[0],
+                "telegram_id":
+                    user[0],
 
-                "first_name": user[1],
+                "first_name":
+                    user[1],
 
-                "last_name": user[2],
+                "last_name":
+                    user[2],
 
-                "username": user[3],
+                "username":
+                    user[3],
 
-                "balance": float(user[4]),
+                "balance":
+                    float(user[4]),
 
-                "referral_count": user[5],
+                "referral_count":
+                    user[5],
 
-                "tasks_completed": user[6],
+                "tasks_completed":
+                    user[6],
 
-                "verified": bool(user[7]),
+                "verified":
+                    bool(user[7]),
 
-                "invited_by": user[8]
+                "invited_by":
+                    user[8]
 
             }
 
         })
-
 
     except Exception as e:
 
@@ -576,7 +541,8 @@ def get_me():
 
             "success": False,
 
-            "error": str(e)
+            "error":
+                str(e)
 
         }), 500
 
@@ -597,19 +563,14 @@ def history():
         telegram_user, error_response, error_code = \
             get_authenticated_user()
 
-
         if error_response:
-
             return error_response, error_code
-
 
         telegram_id = int(
             telegram_user["id"]
         )
 
-
         init_db()
-
 
         with get_db() as conn:
 
@@ -635,40 +596,42 @@ def history():
 
                 """, (telegram_id,))
 
-
                 rows = cur.fetchall()
 
-
         history_list = []
-
 
         for row in rows:
 
             history_list.append({
 
-                "id": row[0],
+                "id":
+                    row[0],
 
-                "type": row[1],
+                "type":
+                    row[1],
 
-                "amount": float(row[2]),
+                "amount":
+                    float(row[2]),
 
-                "description": row[3],
+                "description":
+                    row[3],
 
-                "reference_id": row[4],
+                "reference_id":
+                    row[4],
 
-                "created_at": row[5]
+                "created_at":
+                    row[5]
 
             })
-
 
         return jsonify({
 
             "success": True,
 
-            "history": history_list
+            "history":
+                history_list
 
         })
-
 
     except Exception as e:
 
@@ -676,77 +639,84 @@ def history():
 
             "success": False,
 
-            "error": str(e)
+            "error":
+                str(e)
 
         }), 500
 
 
 # =========================================================
+# INTERNAL SECRET CHECK
+# =========================================================
+
+def check_secret():
+
+    secret = request.args.get(
+        "secret"
+    )
+
+    if not secret:
+        return False
+
+    return hmac.compare_digest(
+        str(secret),
+        str(BOT_API_SECRET)
+    )
+
+
+# =========================================================
 # REGISTER REFERRAL
-# POST /api/referral/register
 #
-# This endpoint is protected by BOT_API_SECRET.
+# GET
+#
+# TELEBOT CREATOR:
+# HTTP.get(...)
+#
+# IMPORTANT:
+# secret is required.
 # =========================================================
 
 @app.route(
     "/api/referral/register",
-    methods=["POST"]
+    methods=["GET"]
 )
-def register_referral():
+def register_referral_get():
 
     try:
 
-        data = request.get_json(
-            silent=True
-        ) or {}
-
-
-        secret = data.get(
-            "secret"
-        )
-
-
-        if not secret:
+        if not check_secret():
 
             return jsonify({
 
                 "success": False,
 
-                "error": "Secret is required"
-
-            }), 401
-
-
-        if not hmac.compare_digest(
-
-            str(secret),
-
-            str(BOT_API_SECRET)
-
-        ):
-
-            return jsonify({
-
-                "success": False,
-
-                "error": "Unauthorized"
+                "error":
+                    "Unauthorized"
 
             }), 403
 
 
-        inviter_id = int(
-            data.get("inviter_id")
+        inviter_id = request.args.get(
+            "inviter_id",
+            type=int
         )
 
-
-        invited_user_id = int(
-            data.get("invited_user_id")
+        invited_user_id = request.args.get(
+            "invited_user_id",
+            type=int
         )
 
+        if not inviter_id or not invited_user_id:
 
-        # -------------------------------------------------
-        # SELF REFERRAL
-        # -------------------------------------------------
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "inviter_id and invited_user_id are required"
+
+            }), 400
+
 
         if inviter_id == invited_user_id:
 
@@ -754,7 +724,8 @@ def register_referral():
 
                 "success": False,
 
-                "error": "Self referral is not allowed"
+                "error":
+                    "Self referral is not allowed"
 
             }), 400
 
@@ -763,17 +734,15 @@ def register_referral():
             time.time()
         )
 
-
         init_db()
-
 
         with get_db() as conn:
 
             with conn.cursor() as cur:
 
-                # -------------------------------------------------
-                # CHECK INVITER
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # INVITER
+                # ---------------------------------------------
 
                 cur.execute("""
                     SELECT telegram_id
@@ -781,11 +750,12 @@ def register_referral():
                     FROM users
 
                     WHERE telegram_id = %s
+
+                    FOR UPDATE
+
                 """, (inviter_id,))
 
-
                 inviter = cur.fetchone()
-
 
                 if not inviter:
 
@@ -793,14 +763,15 @@ def register_referral():
 
                         "success": False,
 
-                        "error": "Inviter does not exist"
+                        "error":
+                            "Inviter does not exist"
 
                     }), 404
 
 
-                # -------------------------------------------------
-                # CHECK INVITED USER
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # INVITED USER
+                # ---------------------------------------------
 
                 cur.execute("""
                     SELECT
@@ -813,15 +784,11 @@ def register_referral():
                     WHERE telegram_id = %s
 
                     FOR UPDATE
-                """, (invited_user_id,))
 
+                """, (invited_user_id,))
 
                 invited = cur.fetchone()
 
-
-                # -------------------------------------------------
-                # CREATE INVITED USER IF NEEDED
-                # -------------------------------------------------
 
                 if not invited:
 
@@ -843,6 +810,7 @@ def register_referral():
                             %s
 
                         )
+
                     """, (
 
                         invited_user_id,
@@ -852,13 +820,9 @@ def register_referral():
 
                     ))
 
-
                 else:
 
-                    # -------------------------------------------------
-                    # ALREADY HAS INVITER
-                    # -------------------------------------------------
-
+                    # User already has inviter
                     if invited[1] is not None:
 
                         conn.commit()
@@ -870,7 +834,8 @@ def register_referral():
                             "message":
                                 "Referral already registered",
 
-                            "rewarded": False
+                            "rewarded":
+                                False
 
                         })
 
@@ -895,9 +860,9 @@ def register_referral():
                     ))
 
 
-                # -------------------------------------------------
-                # INSERT REFERRAL
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # REFERRAL RECORD
+                # ---------------------------------------------
 
                 cur.execute("""
                     INSERT INTO referrals (
@@ -935,9 +900,7 @@ def register_referral():
 
                 ))
 
-
                 referral = cur.fetchone()
-
 
             conn.commit()
 
@@ -946,9 +909,11 @@ def register_referral():
 
             "success": True,
 
-            "message": "Referral registered",
+            "message":
+                "Referral registered",
 
-            "rewarded": False,
+            "rewarded":
+                False,
 
             "referral_created":
                 referral is not None
@@ -962,7 +927,164 @@ def register_referral():
 
             "success": False,
 
-            "error": str(e)
+            "error":
+                str(e)
+
+        }), 500
+
+
+# =========================================================
+# VERIFY USER
+#
+# GET
+#
+# TELEBOT CREATOR:
+# HTTP.get(...)
+#
+# secret required
+# =========================================================
+
+@app.route(
+    "/api/user/verify",
+    methods=["GET"]
+)
+def verify_user_get():
+
+    try:
+
+        if not check_secret():
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Unauthorized"
+
+            }), 403
+
+
+        telegram_id = request.args.get(
+            "telegram_id",
+            type=int
+        )
+
+        if not telegram_id:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "telegram_id is required"
+
+            }), 400
+
+
+        init_db()
+
+        with get_db() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute("""
+                    SELECT
+
+                        telegram_id,
+                        verified
+
+                    FROM users
+
+                    WHERE telegram_id = %s
+
+                    FOR UPDATE
+
+                """, (telegram_id,))
+
+                user = cur.fetchone()
+
+
+                if not user:
+
+                    # Create user if not found
+                    now = int(
+                        time.time()
+                    )
+
+                    cur.execute("""
+                        INSERT INTO users (
+
+                            telegram_id,
+                            verified,
+                            created_at,
+                            updated_at
+
+                        )
+
+                        VALUES (
+
+                            %s,
+                            TRUE,
+                            %s,
+                            %s
+
+                        )
+
+                        RETURNING telegram_id
+
+                    """, (
+
+                        telegram_id,
+                        now,
+                        now
+
+                    ))
+
+                else:
+
+                    cur.execute("""
+                        UPDATE users
+
+                        SET
+
+                            verified = TRUE,
+
+                            updated_at = %s
+
+                        WHERE telegram_id = %s
+
+                    """, (
+
+                        int(time.time()),
+
+                        telegram_id
+
+                    ))
+
+            conn.commit()
+
+
+        return jsonify({
+
+            "success": True,
+
+            "verified":
+                True,
+
+            "telegram_id":
+                telegram_id
+
+        })
+
+
+    except Exception as e:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                str(e)
 
         }), 500
 
@@ -970,73 +1092,62 @@ def register_referral():
 # =========================================================
 # QUALIFY REFERRAL
 #
-# POST /api/referral/qualify
+# GET
 #
-# The invited user must be verified.
-# Reward is given only once.
+# TELEBOT CREATOR:
+# HTTP.get(...)
+#
+# secret required
+#
+# This gives reward ONLY ONCE.
 # =========================================================
 
 @app.route(
     "/api/referral/qualify",
-    methods=["POST"]
+    methods=["GET"]
 )
-def qualify_referral():
+def qualify_referral_get():
 
     try:
 
-        data = request.get_json(
-            silent=True
-        ) or {}
-
-
-        secret = data.get(
-            "secret"
-        )
-
-
-        if not secret:
+        if not check_secret():
 
             return jsonify({
 
                 "success": False,
 
-                "error": "Secret is required"
-
-            }), 401
-
-
-        if not hmac.compare_digest(
-
-            str(secret),
-
-            str(BOT_API_SECRET)
-
-        ):
-
-            return jsonify({
-
-                "success": False,
-
-                "error": "Unauthorized"
+                "error":
+                    "Unauthorized"
 
             }), 403
 
 
-        invited_user_id = int(
-            data.get("invited_user_id")
+        invited_user_id = request.args.get(
+            "invited_user_id",
+            type=int
         )
+
+        if not invited_user_id:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "invited_user_id is required"
+
+            }), 400
 
 
         init_db()
-
 
         with get_db() as conn:
 
             with conn.cursor() as cur:
 
-                # -------------------------------------------------
+                # ---------------------------------------------
                 # LOCK INVITED USER
-                # -------------------------------------------------
+                # ---------------------------------------------
 
                 cur.execute("""
                     SELECT
@@ -1053,7 +1164,6 @@ def qualify_referral():
 
                 """, (invited_user_id,))
 
-
                 invited_user = cur.fetchone()
 
 
@@ -1064,25 +1174,32 @@ def qualify_referral():
                         "success": False,
 
                         "error":
-                            "Invited user does not exist"
+                            "User does not exist",
+
+                        "qualified":
+                            False
 
                     }), 404
 
 
-                # -------------------------------------------------
-                # USER MUST BE VERIFIED
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # MUST BE VERIFIED
+                # ---------------------------------------------
 
                 if not invited_user[1]:
 
                     return jsonify({
 
-                        "success": False,
+                        "success": True,
 
-                        "error":
-                            "Referral is not qualified yet",
+                        "qualified":
+                            False,
 
-                        "qualified": False
+                        "rewarded":
+                            False,
+
+                        "message":
+                            "User is not verified yet"
 
                     })
 
@@ -1094,19 +1211,23 @@ def qualify_referral():
 
                     return jsonify({
 
-                        "success": False,
+                        "success": True,
 
-                        "error":
-                            "User has no inviter",
+                        "qualified":
+                            False,
 
-                        "qualified": False
+                        "rewarded":
+                            False,
+
+                        "message":
+                            "User has no inviter"
 
                     })
 
 
-                # -------------------------------------------------
+                # ---------------------------------------------
                 # LOCK REFERRAL
-                # -------------------------------------------------
+                # ---------------------------------------------
 
                 cur.execute("""
                     SELECT
@@ -1123,7 +1244,6 @@ def qualify_referral():
 
                 """, (invited_user_id,))
 
-
                 referral = cur.fetchone()
 
 
@@ -1134,7 +1254,10 @@ def qualify_referral():
                         "success": False,
 
                         "error":
-                            "Referral record not found"
+                            "Referral record not found",
+
+                        "qualified":
+                            False
 
                     }), 404
 
@@ -1146,9 +1269,9 @@ def qualify_referral():
                 rewarded = referral[2]
 
 
-                # -------------------------------------------------
+                # ---------------------------------------------
                 # ALREADY REWARDED
-                # -------------------------------------------------
+                # ---------------------------------------------
 
                 if rewarded:
 
@@ -1158,19 +1281,24 @@ def qualify_referral():
 
                         "success": True,
 
+                        "qualified":
+                            True,
+
+                        "rewarded":
+                            True,
+
+                        "reward":
+                            float(reward),
+
                         "message":
-                            "Referral reward already given",
-
-                        "qualified": True,
-
-                        "rewarded": True
+                            "Referral reward already given"
 
                     })
 
 
-                # -------------------------------------------------
+                # ---------------------------------------------
                 # LOCK INVITER
-                # -------------------------------------------------
+                # ---------------------------------------------
 
                 cur.execute("""
                     SELECT
@@ -1186,7 +1314,6 @@ def qualify_referral():
                     FOR UPDATE
 
                 """, (inviter_id,))
-
 
                 inviter = cur.fetchone()
 
@@ -1205,20 +1332,22 @@ def qualify_referral():
 
                 old_balance = inviter[1]
 
-
                 new_balance = (
                     old_balance + reward
                 )
-
 
                 new_referral_count = (
                     inviter[2] + 1
                 )
 
+                now = int(
+                    time.time()
+                )
 
-                # -------------------------------------------------
+
+                # ---------------------------------------------
                 # UPDATE INVITER
-                # -------------------------------------------------
+                # ---------------------------------------------
 
                 cur.execute("""
                     UPDATE users
@@ -1239,16 +1368,16 @@ def qualify_referral():
 
                     new_referral_count,
 
-                    int(time.time()),
+                    now,
 
                     inviter_id
 
                 ))
 
 
-                # -------------------------------------------------
-                # MARK REFERRAL REWARDED
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # MARK REWARDED
+                # ---------------------------------------------
 
                 cur.execute("""
                     UPDATE referrals
@@ -1263,16 +1392,16 @@ def qualify_referral():
 
                 """, (
 
-                    int(time.time()),
+                    now,
 
                     referral_id
 
                 ))
 
 
-                # -------------------------------------------------
-                # ADD TRANSACTION
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # TRANSACTION
+                # ---------------------------------------------
 
                 cur.execute("""
                     INSERT INTO transactions (
@@ -1307,7 +1436,7 @@ def qualify_referral():
 
                     str(referral_id),
 
-                    int(time.time())
+                    now
 
                 ))
 
@@ -1318,17 +1447,21 @@ def qualify_referral():
         return jsonify({
 
             "success": True,
+
+            "qualified":
+                True,
+
+            "rewarded":
+                True,
+
+            "reward":
+                float(reward),
+
+            "inviter_id":
+                inviter_id,
 
             "message":
-                "Referral qualified and rewarded",
-
-            "qualified": True,
-
-            "rewarded": True,
-
-            "reward": float(reward),
-
-            "inviter_id": inviter_id
+                "Referral qualified and rewarded"
 
         })
 
@@ -1339,320 +1472,12 @@ def qualify_referral():
 
             "success": False,
 
-            "error": str(e)
+            "error":
+                str(e)
 
         }), 500
 
 
-# =========================================================
-# ADMIN / INTERNAL VERIFY USER
-#
-# Protected with BOT_API_SECRET.
-#
-# This endpoint can be used by your trusted bot/backend
-# after the membership verification process.
-# =========================================================
-
-@app.route(
-    "/api/user/verify",
-    methods=["POST"]
-)
-def verify_user():
-
-    try:
-
-        data = request.get_json(
-            silent=True
-        ) or {}
-
-
-        secret = data.get(
-            "secret"
-        )
-
-
-        if not secret:
-
-            return jsonify({
-
-                "success": False,
-
-                "error": "Secret is required"
-
-            }), 401
-
-
-        if not hmac.compare_digest(
-
-            str(secret),
-
-            str(BOT_API_SECRET)
-
-        ):
-
-            return jsonify({
-
-                "success": False,
-
-                "error": "Unauthorized"
-
-            }), 403
-
-
-        telegram_id = int(
-            data.get("telegram_id")
-        )
-
-
-        init_db()
-
-
-        with get_db() as conn:
-
-            with conn.cursor() as cur:
-
-                # -------------------------------------------------
-                # CHECK USER
-                # -------------------------------------------------
-
-                cur.execute("""
-                    SELECT
-
-                        telegram_id,
-                        verified
-
-                    FROM users
-
-                    WHERE telegram_id = %s
-
-                    FOR UPDATE
-
-                """, (telegram_id,))
-
-
-                user = cur.fetchone()
-
-
-                if not user:
-
-                    return jsonify({
-
-                        "success": False,
-
-                        "error":
-                            "User does not exist"
-
-                    }), 404
-
-
-                # -------------------------------------------------
-                # VERIFY
-                # -------------------------------------------------
-
-                cur.execute("""
-                    UPDATE users
-
-                    SET
-
-                        verified = TRUE,
-
-                        updated_at = %s
-
-                    WHERE telegram_id = %s
-
-                """, (
-
-                    int(time.time()),
-
-                    telegram_id
-
-                ))
-
-
-            conn.commit()
-
-
-        return jsonify({
-
-            "success": True,
-
-            "verified": True,
-
-            "telegram_id": telegram_id
-
-        })
-
-
-    except Exception as e:
-
-        return jsonify({
-
-            "success": False,
-
-            "error": str(e)
-
-        }), 500
-
-# =========================================================
-# REFERRAL REGISTER - GET
-# TELEBOT CREATOR HTTP.get(url)
-# =========================================================
-
-@app.route(
-    "/api/referral/register",
-    methods=["GET"]
-)
-def register_referral_get():
-
-    try:
-
-        inviter_id = request.args.get(
-            "inviter_id",
-            type=int
-        )
-
-        invited_user_id = request.args.get(
-            "invited_user_id",
-            type=int
-        )
-
-        if not inviter_id or not invited_user_id:
-
-            return jsonify({
-                "success": False,
-                "error": "inviter_id and invited_user_id are required"
-            }), 400
-
-        if inviter_id == invited_user_id:
-
-            return jsonify({
-                "success": False,
-                "error": "Self referral is not allowed"
-            }), 400
-
-        now = int(time.time())
-
-        init_db()
-
-        with get_db() as conn:
-
-            with conn.cursor() as cur:
-
-                # Check inviter
-                cur.execute("""
-                    SELECT telegram_id
-                    FROM users
-                    WHERE telegram_id = %s
-                """, (inviter_id,))
-
-                inviter = cur.fetchone()
-
-                if not inviter:
-
-                    return jsonify({
-                        "success": False,
-                        "error": "Inviter does not exist"
-                    }), 404
-
-                # Check invited user
-                cur.execute("""
-                    SELECT telegram_id, invited_by
-                    FROM users
-                    WHERE telegram_id = %s
-                    FOR UPDATE
-                """, (invited_user_id,))
-
-                invited = cur.fetchone()
-
-                if not invited:
-
-                    cur.execute("""
-                        INSERT INTO users (
-                            telegram_id,
-                            invited_by,
-                            created_at,
-                            updated_at
-                        )
-                        VALUES (
-                            %s,
-                            %s,
-                            %s,
-                            %s
-                        )
-                    """, (
-                        invited_user_id,
-                        inviter_id,
-                        now,
-                        now
-                    ))
-
-                else:
-
-                    if invited[1] is not None:
-
-                        conn.commit()
-
-                        return jsonify({
-                            "success": True,
-                            "message": "Referral already registered",
-                            "rewarded": False
-                        })
-
-                    cur.execute("""
-                        UPDATE users
-                        SET
-                            invited_by = %s,
-                            updated_at = %s
-                        WHERE telegram_id = %s
-                    """, (
-                        inviter_id,
-                        now,
-                        invited_user_id
-                    ))
-
-                # Create referral
-                cur.execute("""
-                    INSERT INTO referrals (
-                        inviter_id,
-                        invited_user_id,
-                        reward,
-                        rewarded,
-                        created_at
-                    )
-                    VALUES (
-                        %s,
-                        %s,
-                        %s,
-                        FALSE,
-                        %s
-                    )
-                    ON CONFLICT (invited_user_id)
-                    DO NOTHING
-                    RETURNING id
-                """, (
-                    inviter_id,
-                    invited_user_id,
-                    REFERRAL_REWARD,
-                    now
-                ))
-
-                referral = cur.fetchone()
-
-            conn.commit()
-
-        return jsonify({
-            "success": True,
-            "message": "Referral registered",
-            "rewarded": False,
-            "referral_created": referral is not None
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
 # =========================================================
 # VERCEL / LOCAL
 # =========================================================
@@ -1670,4 +1495,4 @@ if __name__ == "__main__":
             )
         )
 
-                               )
+            )
