@@ -1493,7 +1493,166 @@ def verify_user():
 
         }), 500
 
+# =========================================================
+# REFERRAL REGISTER - GET
+# TELEBOT CREATOR HTTP.get(url)
+# =========================================================
 
+@app.route(
+    "/api/referral/register",
+    methods=["GET"]
+)
+def register_referral_get():
+
+    try:
+
+        inviter_id = request.args.get(
+            "inviter_id",
+            type=int
+        )
+
+        invited_user_id = request.args.get(
+            "invited_user_id",
+            type=int
+        )
+
+        if not inviter_id or not invited_user_id:
+
+            return jsonify({
+                "success": False,
+                "error": "inviter_id and invited_user_id are required"
+            }), 400
+
+        if inviter_id == invited_user_id:
+
+            return jsonify({
+                "success": False,
+                "error": "Self referral is not allowed"
+            }), 400
+
+        now = int(time.time())
+
+        init_db()
+
+        with get_db() as conn:
+
+            with conn.cursor() as cur:
+
+                # Check inviter
+                cur.execute("""
+                    SELECT telegram_id
+                    FROM users
+                    WHERE telegram_id = %s
+                """, (inviter_id,))
+
+                inviter = cur.fetchone()
+
+                if not inviter:
+
+                    return jsonify({
+                        "success": False,
+                        "error": "Inviter does not exist"
+                    }), 404
+
+                # Check invited user
+                cur.execute("""
+                    SELECT telegram_id, invited_by
+                    FROM users
+                    WHERE telegram_id = %s
+                    FOR UPDATE
+                """, (invited_user_id,))
+
+                invited = cur.fetchone()
+
+                if not invited:
+
+                    cur.execute("""
+                        INSERT INTO users (
+                            telegram_id,
+                            invited_by,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (
+                            %s,
+                            %s,
+                            %s,
+                            %s
+                        )
+                    """, (
+                        invited_user_id,
+                        inviter_id,
+                        now,
+                        now
+                    ))
+
+                else:
+
+                    if invited[1] is not None:
+
+                        conn.commit()
+
+                        return jsonify({
+                            "success": True,
+                            "message": "Referral already registered",
+                            "rewarded": False
+                        })
+
+                    cur.execute("""
+                        UPDATE users
+                        SET
+                            invited_by = %s,
+                            updated_at = %s
+                        WHERE telegram_id = %s
+                    """, (
+                        inviter_id,
+                        now,
+                        invited_user_id
+                    ))
+
+                # Create referral
+                cur.execute("""
+                    INSERT INTO referrals (
+                        inviter_id,
+                        invited_user_id,
+                        reward,
+                        rewarded,
+                        created_at
+                    )
+                    VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        FALSE,
+                        %s
+                    )
+                    ON CONFLICT (invited_user_id)
+                    DO NOTHING
+                    RETURNING id
+                """, (
+                    inviter_id,
+                    invited_user_id,
+                    REFERRAL_REWARD,
+                    now
+                ))
+
+                referral = cur.fetchone()
+
+            conn.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Referral registered",
+            "rewarded": False,
+            "referral_created": referral is not None
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 # =========================================================
 # VERCEL / LOCAL
 # =========================================================
