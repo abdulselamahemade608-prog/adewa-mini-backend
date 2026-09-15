@@ -28,7 +28,10 @@ BOT_API_SECRET = os.environ.get("BOT_API_SECRET", "")
 
 REFERRAL_REWARD = Decimal("1.00")
 
-# AdsGram reward
+# AdsGram
+ADSGRAM_BLOCK_ID = "48046"
+
+# Reward per completed ad
 AD_REWARD = Decimal("0.01")
 
 # Maximum rewarded ads per user per day
@@ -46,7 +49,6 @@ CHANNELS = [
 
 @app.errorhandler(404)
 def error_404(error):
-
     return jsonify({
         "success": False,
         "error": "Endpoint not found",
@@ -56,7 +58,6 @@ def error_404(error):
 
 @app.errorhandler(405)
 def error_405(error):
-
     return jsonify({
         "success": False,
         "error": "Method not allowed",
@@ -67,7 +68,6 @@ def error_405(error):
 
 @app.errorhandler(500)
 def error_500(error):
-
     return jsonify({
         "success": False,
         "error": "Internal server error"
@@ -81,13 +81,9 @@ def error_500(error):
 def get_db():
 
     if not DATABASE_URL:
-        raise Exception(
-            "DATABASE_URL is missing"
-        )
+        raise Exception("DATABASE_URL is missing")
 
-    return psycopg.connect(
-        DATABASE_URL
-    )
+    return psycopg.connect(DATABASE_URL)
 
 
 def init_db():
@@ -96,10 +92,7 @@ def init_db():
 
         with conn.cursor() as cur:
 
-            # =================================================
             # USERS
-            # =================================================
-
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
 
@@ -133,11 +126,7 @@ def init_db():
                 )
             """)
 
-
-            # =================================================
             # REFERRALS
-            # =================================================
-
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS referrals (
 
@@ -161,11 +150,7 @@ def init_db():
                 )
             """)
 
-
-            # =================================================
             # TRANSACTIONS
-            # =================================================
-
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS transactions (
 
@@ -187,6 +172,25 @@ def init_db():
                 )
             """)
 
+            # ADSGRAM CALLBACK LOG
+            #
+            # This stores AdsGram Reward URL callbacks.
+            # It does NOT add balance by itself.
+            #
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS adsgram_callbacks (
+
+                    id SERIAL PRIMARY KEY,
+
+                    telegram_id BIGINT NOT NULL,
+
+                    block_id TEXT,
+
+                    received_at TIMESTAMPTZ
+                        DEFAULT NOW()
+                )
+            """)
+
         conn.commit()
 
 
@@ -197,14 +201,10 @@ def init_db():
 def validate_init_data(init_data):
 
     if not BOT_TOKEN:
-        raise Exception(
-            "BOT_TOKEN is missing"
-        )
+        raise Exception("BOT_TOKEN is missing")
 
     if not init_data:
-        raise Exception(
-            "Telegram initData is missing"
-        )
+        raise Exception("Telegram initData is missing")
 
     try:
 
@@ -219,9 +219,7 @@ def validate_init_data(init_data):
         )[0]
 
         if not received_hash:
-            raise Exception(
-                "Missing Telegram hash"
-            )
+            raise Exception("Missing Telegram hash")
 
         data_pairs = []
 
@@ -274,7 +272,6 @@ def validate_init_data(init_data):
         )
 
         if now - auth_date > 86400:
-
             raise Exception(
                 "Telegram initData expired"
             )
@@ -285,14 +282,11 @@ def validate_init_data(init_data):
         )[0]
 
         if not user_json:
-
             raise Exception(
                 "Telegram user data missing"
             )
 
-        user = json.loads(
-            user_json
-        )
+        user = json.loads(user_json)
 
         return user
 
@@ -311,10 +305,7 @@ def validate_init_data(init_data):
 def telegram_api(method, data):
 
     if not BOT_TOKEN:
-
-        raise Exception(
-            "BOT_TOKEN is missing"
-        )
+        raise Exception("BOT_TOKEN is missing")
 
     url = (
         "https://api.telegram.org/bot"
@@ -360,7 +351,6 @@ def check_channel_membership(user_id):
         )
 
         if not result.get("ok"):
-
             raise Exception(
                 "Could not check channel "
                 + channel
@@ -371,16 +361,13 @@ def check_channel_membership(user_id):
             {}
         )
 
-        status = member.get(
-            "status"
-        )
+        status = member.get("status")
 
         if status not in [
             "member",
             "administrator",
             "creator"
         ]:
-
             return False, channel
 
     return True, None
@@ -521,14 +508,10 @@ def get_user(telegram_id):
 def home():
 
     return jsonify({
-
         "success": True,
-
-        "service":
-            "ADEWA Mini Bot API",
-
-        "status":
-            "running"
+        "service": "ADEWA Mini Bot API",
+        "status": "running",
+        "adsgram_block_id": ADSGRAM_BLOCK_ID
     })
 
 
@@ -545,9 +528,7 @@ def health():
 
             with conn.cursor() as cur:
 
-                cur.execute(
-                    "SELECT 1"
-                )
+                cur.execute("SELECT 1")
 
         return jsonify({
 
@@ -557,7 +538,10 @@ def health():
                 "online",
 
             "database":
-                "connected"
+                "connected",
+
+            "adsgram":
+                ADSGRAM_BLOCK_ID
         })
 
     except Exception as e:
@@ -691,7 +675,6 @@ def verify_and_qualify():
 
             with conn.cursor() as cur:
 
-                # Lock invited user
                 cur.execute("""
                     SELECT
 
@@ -711,14 +694,12 @@ def verify_and_qualify():
                 user_row = cur.fetchone()
 
                 if not user_row:
-
                     raise Exception(
                         "User not found"
                     )
 
                 invited_by = user_row[1]
 
-                # Mark verified
                 cur.execute("""
                     UPDATE users
 
@@ -733,9 +714,7 @@ def verify_and_qualify():
                     user_id,
                 ))
 
-                # =============================================
                 # REFERRAL REWARD
-                # =============================================
 
                 if invited_by:
 
@@ -768,7 +747,6 @@ def verify_and_qualify():
                             str(referral[2])
                         )
 
-                        # Lock inviter
                         cur.execute("""
                             SELECT telegram_id
 
@@ -951,7 +929,6 @@ def register_referral():
 
             with conn.cursor() as cur:
 
-                # Make sure inviter exists
                 cur.execute("""
                     INSERT INTO users (
                         telegram_id
@@ -964,7 +941,6 @@ def register_referral():
                     inviter_id,
                 ))
 
-                # Make sure invited user exists
                 cur.execute("""
                     INSERT INTO users (
                         telegram_id
@@ -977,7 +953,6 @@ def register_referral():
                     invited_user_id,
                 ))
 
-                # Only first inviter counts
                 cur.execute("""
                     SELECT invited_by
 
@@ -1067,7 +1042,12 @@ def register_referral():
 
 
 # =========================================================
-# ADSGRAM REWARD
+# ADSGRAM CLIENT REWARD
+# =========================================================
+#
+# Called by the Mini App AFTER AdsGram confirms that the
+# Reward ad was watched to the end.
+#
 # =========================================================
 
 @app.route(
@@ -1086,10 +1066,6 @@ def reward_ad():
             "initData"
         )
 
-        # =============================================
-        # VALIDATE TELEGRAM USER
-        # =============================================
-
         telegram_user = validate_init_data(
             init_data
         )
@@ -1098,29 +1074,20 @@ def reward_ad():
             telegram_user["id"]
         )
 
-        # Make sure account exists
         save_user(
             telegram_user
         )
-
-        # =============================================
-        # DATABASE TRANSACTION
-        # =============================================
 
         with get_db() as conn:
 
             with conn.cursor() as cur:
 
-                # Lock user
+                # LOCK USER
                 cur.execute("""
                     SELECT
 
                         telegram_id,
-                        first_name,
-                        last_name,
                         balance,
-                        referral_count,
-                        tasks_completed,
                         verified
 
                     FROM users
@@ -1135,15 +1102,23 @@ def reward_ad():
                 user_row = cur.fetchone()
 
                 if not user_row:
-
                     raise Exception(
                         "User account not found"
                     )
 
-                # =============================================
-                # DAILY AD LIMIT
-                # =============================================
+                # User must be verified
+                if not user_row[2]:
 
+                    return jsonify({
+
+                        "success": False,
+
+                        "error":
+                            "Account is not verified."
+
+                    }), 403
+
+                # DAILY LIMIT
                 cur.execute("""
                     SELECT COUNT(*)
 
@@ -1173,19 +1148,12 @@ def reward_ad():
 
                     }), 429
 
-                # =============================================
-                # UNIQUE REFERENCE
-                # =============================================
-
                 reference_id = (
-                    "ad_"
+                    "adsgram_"
                     + str(uuid.uuid4())
                 )
 
-                # =============================================
-                # ADD REWARD
-                # =============================================
-
+                # ADD 0.01
                 cur.execute("""
                     UPDATE users
 
@@ -1199,32 +1167,15 @@ def reward_ad():
 
                     WHERE telegram_id = %s
 
-                    RETURNING
-
-                        telegram_id,
-                        first_name,
-                        last_name,
-                        balance,
-                        referral_count,
-                        tasks_completed,
-                        verified
+                    RETURNING balance
                 """, (
                     AD_REWARD,
                     user_id
                 ))
 
-                updated_user = cur.fetchone()
+                updated_balance = cur.fetchone()[0]
 
-                if not updated_user:
-
-                    raise Exception(
-                        "Could not update user balance"
-                    )
-
-                # =============================================
                 # SAVE TRANSACTION
-                # =============================================
-
                 cur.execute("""
                     INSERT INTO transactions (
 
@@ -1253,9 +1204,9 @@ def reward_ad():
 
             conn.commit()
 
-        # =============================================
-        # RESPONSE
-        # =============================================
+        user = get_user(
+            user_id
+        )
 
         return jsonify({
 
@@ -1264,29 +1215,11 @@ def reward_ad():
             "reward":
                 str(AD_REWARD),
 
-            "user": {
+            "balance":
+                user["balance"],
 
-                "telegram_id":
-                    updated_user[0],
-
-                "first_name":
-                    updated_user[1],
-
-                "last_name":
-                    updated_user[2],
-
-                "balance":
-                    str(updated_user[3]),
-
-                "referral_count":
-                    updated_user[4],
-
-                "tasks_completed":
-                    updated_user[5],
-
-                "verified":
-                    updated_user[6]
-            }
+            "user":
+                user
         })
 
     except Exception as e:
@@ -1299,6 +1232,120 @@ def reward_ad():
                 str(e)
 
         }), 400
+
+
+# =========================================================
+# ADSGRAM SERVER REWARD URL
+# =========================================================
+#
+# AdsGram sends:
+#
+# GET /api/reward/adsgram?userid=TELEGRAM_ID
+#
+# IMPORTANT:
+# This endpoint records the callback only.
+# It does NOT add another reward because the client-side
+# AdsGram callback already performs the reward.
+#
+# =========================================================
+
+@app.route(
+    "/api/reward/adsgram",
+    methods=["GET"]
+)
+def adsgram_reward_callback():
+
+    try:
+
+        userid = (
+            request.args.get("userid")
+            or request.args.get("userId")
+        )
+
+        if not userid:
+            return jsonify({
+                "success": False,
+                "error": "userid is required"
+            }), 400
+
+        user_id = int(userid)
+
+        with get_db() as conn:
+
+            with conn.cursor() as cur:
+
+                # Make sure user exists
+                cur.execute("""
+                    SELECT telegram_id
+
+                    FROM users
+
+                    WHERE telegram_id = %s
+                """, (
+                    user_id,
+                ))
+
+                user = cur.fetchone()
+
+                if not user:
+
+                    return jsonify({
+                        "success": False,
+                        "error": "User not found"
+                    }), 404
+
+                # Save callback
+                cur.execute("""
+                    INSERT INTO adsgram_callbacks (
+                        telegram_id,
+                        block_id
+                    )
+
+                    VALUES (
+                        %s,
+                        %s
+                    )
+                """, (
+                    user_id,
+                    ADSGRAM_BLOCK_ID
+                ))
+
+            conn.commit()
+
+        return jsonify({
+
+            "success": True,
+
+            "received": True,
+
+            "telegram_id":
+                user_id,
+
+            "block_id":
+                ADSGRAM_BLOCK_ID
+        })
+
+    except ValueError:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Invalid Telegram user ID"
+
+        }), 400
+
+    except Exception as e:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                str(e)
+
+        }), 500
 
 
 # =========================================================
@@ -1437,4 +1484,4 @@ if __name__ == "__main__":
                 5000
             )
         )
-    )
+        )
