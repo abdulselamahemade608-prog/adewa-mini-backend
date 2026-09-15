@@ -968,3 +968,473 @@ def register_referral():
                 cur.execute("""
                     INSERT INTO users (
                         telegram_id
+                    )
+
+                    VALUES (%s)
+
+                    ON CONFLICT DO NOTHING
+                """, (
+                    invited_user_id,
+                ))
+
+                # Only first inviter counts
+                cur.execute("""
+                    SELECT invited_by
+
+                    FROM users
+
+                    WHERE telegram_id = %s
+
+                    FOR UPDATE
+                """, (
+                    invited_user_id,
+                ))
+
+                existing = cur.fetchone()
+
+                if existing and existing[0]:
+
+                    return jsonify({
+
+                        "success": True,
+
+                        "registered": False,
+
+                        "message":
+                            "Referral already exists"
+                    })
+
+                cur.execute("""
+                    UPDATE users
+
+                    SET
+
+                        invited_by = %s,
+
+                        updated_at = NOW()
+
+                    WHERE telegram_id = %s
+                """, (
+                    inviter_id,
+                    invited_user_id
+                ))
+
+                cur.execute("""
+                    INSERT INTO referrals (
+
+                        inviter_id,
+                        invited_user_id,
+                        reward
+
+                    )
+
+                    VALUES (
+                        %s,
+                        %s,
+                        %s
+                    )
+
+                    ON CONFLICT (
+                        invited_user_id
+                    )
+
+                    DO NOTHING
+                """, (
+                    inviter_id,
+                    invited_user_id,
+                    REFERRAL_REWARD
+                ))
+
+            conn.commit()
+
+        return jsonify({
+
+            "success": True,
+
+            "registered": True
+        })
+
+    except Exception as e:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                str(e)
+
+        }), 400
+
+
+# =========================================================
+# ADSGRAM REWARD
+# =========================================================
+
+@app.route(
+    "/api/reward/ad",
+    methods=["POST"]
+)
+def reward_ad():
+
+    try:
+
+        body = request.get_json(
+            silent=True
+        ) or {}
+
+        init_data = body.get(
+            "initData"
+        )
+
+        # =============================================
+        # VALIDATE TELEGRAM USER
+        # =============================================
+
+        telegram_user = validate_init_data(
+            init_data
+        )
+
+        user_id = int(
+            telegram_user["id"]
+        )
+
+        # Make sure account exists
+        save_user(
+            telegram_user
+        )
+
+        # =============================================
+        # DATABASE TRANSACTION
+        # =============================================
+
+        with get_db() as conn:
+
+            with conn.cursor() as cur:
+
+                # Lock user
+                cur.execute("""
+                    SELECT
+
+                        telegram_id,
+                        first_name,
+                        last_name,
+                        balance,
+                        referral_count,
+                        tasks_completed,
+                        verified
+
+                    FROM users
+
+                    WHERE telegram_id = %s
+
+                    FOR UPDATE
+                """, (
+                    user_id,
+                ))
+
+                user_row = cur.fetchone()
+
+                if not user_row:
+
+                    raise Exception(
+                        "User account not found"
+                    )
+
+                # =============================================
+                # DAILY AD LIMIT
+                # =============================================
+
+                cur.execute("""
+                    SELECT COUNT(*)
+
+                    FROM transactions
+
+                    WHERE
+
+                        user_id = %s
+
+                        AND type = 'ad_reward'
+
+                        AND created_at >= CURRENT_DATE
+                """, (
+                    user_id,
+                ))
+
+                today_count = cur.fetchone()[0]
+
+                if today_count >= MAX_AD_REWARDS_PER_DAY:
+
+                    return jsonify({
+
+                        "success": False,
+
+                        "error":
+                            "Daily advertisement reward limit reached."
+
+                    }), 429
+
+                # =============================================
+                # UNIQUE REFERENCE
+                # =============================================
+
+                reference_id = (
+                    "ad_"
+                    + str(uuid.uuid4())
+                )
+
+                # =============================================
+                # ADD REWARD
+                # =============================================
+
+                cur.execute("""
+                    UPDATE users
+
+                    SET
+
+                        balance =
+                            balance + %s,
+
+                        updated_at =
+                            NOW()
+
+                    WHERE telegram_id = %s
+
+                    RETURNING
+
+                        telegram_id,
+                        first_name,
+                        last_name,
+                        balance,
+                        referral_count,
+                        tasks_completed,
+                        verified
+                """, (
+                    AD_REWARD,
+                    user_id
+                ))
+
+                updated_user = cur.fetchone()
+
+                if not updated_user:
+
+                    raise Exception(
+                        "Could not update user balance"
+                    )
+
+                # =============================================
+                # SAVE TRANSACTION
+                # =============================================
+
+                cur.execute("""
+                    INSERT INTO transactions (
+
+                        user_id,
+                        type,
+                        amount,
+                        description,
+                        reference_id
+
+                    )
+
+                    VALUES (
+
+                        %s,
+                        'ad_reward',
+                        %s,
+                        %s,
+                        %s
+                    )
+                """, (
+                    user_id,
+                    AD_REWARD,
+                    "AdsGram rewarded ad",
+                    reference_id
+                ))
+
+            conn.commit()
+
+        # =============================================
+        # RESPONSE
+        # =============================================
+
+        return jsonify({
+
+            "success": True,
+
+            "reward":
+                str(AD_REWARD),
+
+            "user": {
+
+                "telegram_id":
+                    updated_user[0],
+
+                "first_name":
+                    updated_user[1],
+
+                "last_name":
+                    updated_user[2],
+
+                "balance":
+                    str(updated_user[3]),
+
+                "referral_count":
+                    updated_user[4],
+
+                "tasks_completed":
+                    updated_user[5],
+
+                "verified":
+                    updated_user[6]
+            }
+        })
+
+    except Exception as e:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                str(e)
+
+        }), 400
+
+
+# =========================================================
+# HISTORY
+# =========================================================
+
+@app.route(
+    "/api/history",
+    methods=["POST"]
+)
+def history():
+
+    try:
+
+        body = request.get_json(
+            silent=True
+        ) or {}
+
+        init_data = body.get(
+            "initData"
+        )
+
+        telegram_user = validate_init_data(
+            init_data
+        )
+
+        user_id = int(
+            telegram_user["id"]
+        )
+
+        save_user(
+            telegram_user
+        )
+
+        with get_db() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute("""
+                    SELECT
+
+                        id,
+                        type,
+                        amount,
+                        description,
+                        reference_id,
+                        created_at
+
+                    FROM transactions
+
+                    WHERE user_id = %s
+
+                    ORDER BY created_at DESC
+
+                    LIMIT 100
+                """, (
+                    user_id,
+                ))
+
+                rows = cur.fetchall()
+
+        transactions = []
+
+        for row in rows:
+
+            transactions.append({
+
+                "id":
+                    row[0],
+
+                "type":
+                    row[1],
+
+                "amount":
+                    str(row[2]),
+
+                "description":
+                    row[3],
+
+                "reference_id":
+                    row[4],
+
+                "created_at":
+                    row[5].isoformat()
+                    if row[5]
+                    else None
+            })
+
+        return jsonify({
+
+            "success": True,
+
+            "transactions":
+                transactions
+        })
+
+    except Exception as e:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                str(e)
+
+        }), 400
+
+
+# =========================================================
+# START DATABASE
+# =========================================================
+
+try:
+
+    init_db()
+
+except Exception as e:
+
+    print(
+        "Database initialization error:",
+        e
+    )
+
+
+# =========================================================
+# LOCAL DEVELOPMENT
+# =========================================================
+
+if __name__ == "__main__":
+
+    app.run(
+        host="0.0.0.0",
+        port=int(
+            os.environ.get(
+                "PORT",
+                5000
+            )
+        )
+    )
